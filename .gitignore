@@ -29,3 +29,26 @@ Thumbs.db
 # Local secrets and logs
 windows/nas_config.ps1
 windows/nas.log
+
+# Local-only files (not part of the published project)
+/JIO_STB_DESKTOP_TRANSFORMATION_GUIDE.txt
+/PROJECT_LOG.md
+/check_wifi_connected.ps1
+/desktop_screenshot.png
+/init_linux_desktop.sh
+/nas.conf
+/nas_autostart/JioNasAutoBoot.apk
+/packages
+/passwd_screen.png
+/restore_jio_stb.bat
+/restore_jio_stb.ps1
+/restore_jio_stb.sh
+/run_nas_setup.sh
+/screen_termux.png
+/screenshots
+/scripts
+/settings_launcher
+/termux_now.png
+/termux_screen.png
+/wallpaper.jpg
+/wallpaper_builder
