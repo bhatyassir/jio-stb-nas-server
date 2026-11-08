@@ -1,5 +1,52 @@
 # Jio STB Project Log
 
+## [2026-11-08] - Reliable Windows Auto-Mount: Self-Healing Scheduled Task
+
+### Problem
+Drives still dropped after STB reboots / Wi-Fi drops (mapper only ran at login), the saved Windows credential was missing, the startup VBS depended on a OneDrive path, and `Z:` silently fell back to `Jio_NAS` when the USB drive was not mounted.
+
+### Findings
+* STB, `smbd`, `filebrowser`, `sshd` healthy; USB volume `public:8,1` was `UNMOUNTABLE` (`blkid failed to identify`, `unsupported filesystem`). Likely NTFS dirty flag / power. Needs `chkdsk /f` on a PC.
+
+### Changes
+* New `windows/` folder: `nas_mount.ps1` (idempotent, only remaps dead drives, upgrades `Z:` to `External_USB` when available, re-adds credential, logs), `nas_mount.vbs` (hidden launcher), `install_task.ps1` (task `JioNasMount`: logon + every 2 min), `nas_config.example.ps1` (secrets live in gitignored `nas_config.ps1`).
+* `Map_Jio_USB_NAS.bat` now just calls the same script (`/PERSISTENT:NO`).
+* Removed `mount_nas_silent.*` (superseded). Passwords redacted from docs.
+* Live setup runs from `C:\NAS`; old Startup-folder VBS removed.
+
+### Still manual
+Router DHCP reservation for the STB; `chkdsk /f` and disable Fast Startup for the USB drive; consider `guest ok = no` in `smb.conf`.
+
+
+## [2026-11-08] - Zero-Maintenance Windows Auto-Mount & Error 1219 Permanent Resolution
+
+### Problem
+When the user logged in or rebooted Windows, accessing the NAS resulted in failure, broken network drive states, or `System error 1219: Multiple connections to a server or shared resource by the same user, using more than one user name, are not allowed`, requiring manual troubleshooting and command execution.
+
+### Root Cause
+1. **Windows Persistent Drive Reconnect Conflict:**
+   - Previous mapping scripts used `/PERSISTENT:YES`. On boot/login, Windows `LanmanWorkstation` attempts to restore saved network drives using default SMB port 445 before the network or custom port 4445 is ready.
+   - This placed drives into a `Disconnected` ghost state with cached authentication tokens.
+   - Subsequent user reconnection attempts were rejected by Windows SMB with Error 1219 due to conflicting cached sessions.
+2. **Missing Windows Credential Vault Entry:**
+   - Windows Credential Manager had no stored credentials for `192.168.31.199`, causing Windows to attempt logon using current local Windows user credentials.
+3. **Manual Trigger Requirement:**
+   - Users had to manually find and double-click batch scripts instead of seamless OS-level automatic mounting on boot/logon.
+
+### Permanent Resolution
+1. **Windows Credential Vault Storage:**
+   - Permanently registered `192.168.31.199` credentials (`admin` / `<NAS_PASS>`) into Windows Credential Manager via `cmdkey`.
+2. **Silent Background Auto-Mounter:**
+   - Created `mount_nas_silent.ps1` and `mount_nas_silent.vbs` which:
+     - Waits up to 30s for STB Samba port 4445 to respond (handles network handshake).
+     - Automatically recovers the STB IP from ARP via MAC `68-b9-c2-d7-4b-ce` if DHCP changes the IP.
+     - Flushes any ghost/stale SMB sessions before connecting.
+     - Mounts `Z:` and `Y:` using `/PERSISTENT:NO` so Windows never saves broken reconnect states.
+3. **Windows Startup Deployment:**
+   - Deployed `Mount_Jio_NAS.vbs` to `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`.
+   - Now mounts 100% silently in the background at every user login without terminal popups, manual clicks, or error dialogs.
+
+
 ## [2026-11-08] - Wi-Fi Migration & Static IP Assignment (`192.168.31.199`)
 
 ### Overview & Verification
@@ -134,8 +181,8 @@ Transform the Jio 4K OTT STB (`192.168.31.157:5555`, Android 11, `armeabi-v7a`) 
    - Killed and uninstalled `proot-distro`, `tigervnc`, `x11-repo`, `minidlna`, `aria2`.
    - Purged multi-gigabyte rootfs at `$PREFIX/var/lib/proot-distro`, `~/.vnc`, and legacy desktop launcher scripts.
 2. **Lightweight NAS Stack Deployed:**
-   - **Samba SMB3 Server:** Installed `samba` via Termux apt. Configured non-root TCP port 4445, SMB2/SMB3 protocol, wide symlinks support, `guest ok = yes`, and user authentication (`admin` / `123456`). Shares exported: `[Jio_NAS]`, `[USB_Storage]`, `[Internal_Storage]`.
-   - **FileBrowser Web NAS UI:** Deployed official static 32-bit ARMv7 `filebrowser` binary (v2.63.23) to `$PREFIX/bin/filebrowser`. Configured on port `8080` pointing to `/sdcard/NAS_Root` with `--followExternalSymlinks`. Created administrative account: `admin` / `JioNAS@2026!Admin`.
+   - **Samba SMB3 Server:** Installed `samba` via Termux apt. Configured non-root TCP port 4445, SMB2/SMB3 protocol, wide symlinks support, `guest ok = yes`, and user authentication (`admin` / `<NAS_PASS>`). Shares exported: `[Jio_NAS]`, `[USB_Storage]`, `[Internal_Storage]`.
+   - **FileBrowser Web NAS UI:** Deployed official static 32-bit ARMv7 `filebrowser` binary (v2.63.23) to `$PREFIX/bin/filebrowser`. Configured on port `8080` pointing to `/sdcard/NAS_Root` with `--followExternalSymlinks`. Created administrative account: `admin` / `<WEB_PASS>`.
    - **OpenSSH / SFTP:** Configured `sshd` on non-root port `8022`.
    - **Dynamic USB Auto-Mounter Watchdog:** Configured `~/usb_nas_watchdog.sh` to poll `/storage/` every 10 seconds, purge stale links, and automatically symlink any plugged-in USB drive (`/storage/<UUID>`) into `/sdcard/NAS_Root/External_Drives/USB_<UUID>` with full Termux sandbox permissions.
 3. **Boot Persistence:**
@@ -155,7 +202,7 @@ Transform the Jio 4K OTT STB (`192.168.31.157:5555`, Android 11, `armeabi-v7a`) 
    - Removed obsolete `Connect_Jio_Linux_VNC.bat` from Windows Desktop.
    - Created `Map_Jio_USB_NAS.bat` directly on Windows Desktop (`C:\Users\Bhat Tajamul\OneDrive\Desktop\Map_Jio_USB_NAS.bat`).
 2. **Drive Mapping Test:**
-   - Executed `net use Z: \\192.168.31.157\Jio_NAS 123456 /USER:admin /TCPPORT:4445 /PERSISTENT:YES`.
+   - Executed `net use Z: \\192.168.31.157\Jio_NAS <NAS_PASS> /USER:admin /TCPPORT:4445 /PERSISTENT:YES`.
    - **Result:** Successfully mapped as drive `Z:`.
    - Tested writing `Z:\Internal_Media\test_from_windows.txt`, reading, and deleting: **All Verified 100% Operational**.
 3. **Status:** **ALL PHASES COMPLETED & OPERATIONAL**

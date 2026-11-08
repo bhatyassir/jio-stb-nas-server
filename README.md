@@ -39,6 +39,40 @@ However, the internal Wi-Fi chip (**Realtek RTL8822CS**) is a **2×2 MIMO Dual-B
 
 ---
 
+## Windows Client: Keeping `Z:` / `Y:` Mounted Reliably
+
+Mapping a network drive once is not enough. These problems were hit in practice, and `windows/` fixes them:
+
+| Symptom | Cause | Fix in this repo |
+|---|---|---|
+| `System error 1219` / drives show "Disconnected" | `/PERSISTENT:YES` makes Windows restore the mapping at boot, before the network is ready and without the custom SMB port | Mount with `/PERSISTENT:NO` every time |
+| Drives gone after STB reboot or Wi-Fi drop | The mapper only ran at login | Scheduled task re-checks every 2 minutes and remaps only dead drives |
+| Windows tries your PC login against the STB | No saved credential | Script runs `cmdkey /add` every run |
+| Nothing mounts at login | Startup script lived in a OneDrive folder that was not synced yet | Run from a local folder (e.g. `C:\NAS`) |
+| `Z:` silently shows the wrong share | Fallback from `External_USB` to `Jio_NAS` when the USB is not mounted | Logs a `WARN` in `nas.log`, and upgrades `Z:` to `External_USB` once it appears |
+| STB got a new IP | DHCP | Script finds the STB by MAC via ARP; better, reserve the IP in your router |
+
+### Setup
+1. Copy `windows/` to a local folder such as `C:\NAS` (not OneDrive).
+2. Copy `nas_config.example.ps1` to `nas_config.ps1` and fill in IP, MAC, port, user and password. This file is gitignored.
+3. Run `install_task.ps1` in PowerShell. It registers the `JioNasMount` task (logon + every 2 minutes, hidden).
+4. Check `nas.log` for problems. Remove with `Unregister-ScheduledTask JioNasMount -Confirm:$false`.
+
+`Map_Jio_USB_NAS.bat` is a manual one-shot using the same script.
+
+### If the USB drive shows as `UNMOUNTABLE` on the STB
+`dumpsys mount` showing `state=UNMOUNTABLE` and `vold: blkid failed to identify` means Android cannot read the filesystem, so no script can share it. Common causes:
+* **NTFS dirty flag**, usually from Windows **Fast Startup** or unplugging without "Safely remove". Run `chkdsk X: /f` on a PC and disable Fast Startup.
+* **Power**: spin-up draws more than the STB port gives. Use a powered USB hub.
+* Android cannot repair NTFS. exFAT or ext4 are less fragile for a drive that is often unplugged.
+
+### Security notes
+* The example setup scripts use a default password (`123456`). **Change it** before use.
+* `guest ok = yes` in `smb.conf` lets anyone on your network read and write the shares. Set it to `no` if the network is shared.
+* Never commit `nas_config.ps1`.
+
+---
+
 ## 3. Master AI Agent Prompt (Copy & Paste for Autonomous Setup)
 
 Anyone can copy and paste the following prompt into an autonomous coding/system agent (such as Antigravity, Claude Code, etc.) to set up this entire architecture from scratch:
@@ -65,11 +99,11 @@ Follow these strict technical specifications:
 ### Phase 3: Lightweight NAS Stack Installation
 * **Install and configure Samba SMB3:**
   * Run Samba in non-root user mode on TCP port `4445` (exporting `[External_USB]`, `[Jio_NAS]`, `[Internal_Storage]`).
-  * Configure credentials (`admin` / `123456`), enable wide symlinks, and set `ntlm auth = yes`.
+  * Configure credentials (`admin` / `<NAS_PASS>`), enable wide symlinks, and set `ntlm auth = yes`.
 * **Install static 32-bit ARM FileBrowser binary:**
   * Configure to listen on port `8080` with database at `~/.config/filebrowser.db`.
   * Set root directory to `/storage` with `--followExternalSymlinks`.
-  * Create admin account (`admin` / `JioNAS@2026!Admin`).
+  * Create admin account (`admin` / `<WEB_PASS>`).
 * **Deploy Emby Media Server:**
   * Sideload official ARMv7 `embyserver.apk`.
   * Grant `MANAGE_EXTERNAL_STORAGE` and add to `deviceidle` whitelist.

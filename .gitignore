@@ -25,3 +25,7 @@ gen/
 # OS generated files
 Thumbs.db
 .DS_Store
+
+# Local secrets and logs
+windows/nas_config.ps1
+windows/nas.log
