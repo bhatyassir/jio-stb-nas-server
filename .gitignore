@@ -1,0 +1,27 @@
+# Large binaries and archives
+filebrowser
+filebrowser.tar.gz
+packages/embyserver.apk
+packages/firefox-arm.apk
+packages/termux-v7a.apk
+packages/materialfiles.apk
+packages/smartdock.apk
+packages/taskbar.apk
+packages/avnc.apk
+packages/filebrowser
+packages/filebrowser-armv7.tar.gz
+
+# Android and Java build artifacts
+bin/
+**/bin/
+gen/
+**/gen/
+*.dex
+*.class
+*.idsig
+*.unsigned.apk
+*unsigned.apk
+
+# OS generated files
+Thumbs.db
+.DS_Store
