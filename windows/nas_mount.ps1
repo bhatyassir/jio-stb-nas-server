@@ -18,11 +18,12 @@ cmdkey /add:$Ip /user:$User /pass:$Pass | Out-Null
 
 function Mapped($letter){ (Get-PSDrive -Name $letter -PSProvider FileSystem).DisplayRoot }
 function Healthy($letter){ (Test-Path "${letter}:\") }
-function Map($letter,$share){ cmd /c "net use ${letter}: \$Ip\$share $Pass /USER:$User /TCPPORT:$Port /PERSISTENT:NO >nul 2>&1"; return ($LASTEXITCODE -eq 0) }
+$bs = [string][char]92   # backslash, built explicitly so the UNC prefix can't be mangled
+function Map($letter,$share){ cmd /c "net use ${letter}: $bs$bs$Ip\$share $Pass /USER:$User /TCPPORT:$Port /PERSISTENT:NO >nul 2>&1"; return ($LASTEXITCODE -eq 0) }
 function Unmap($letter){ cmd /c "net use ${letter}: /delete /y >nul 2>&1" }
 
 # Z: prefer External_USB, fall back to Jio_NAS, and upgrade when the USB appears
-$usbRoot = "\$Ip\External_USB"
+$usbRoot = "$bs$bs$Ip\External_USB"
 $z = Mapped 'Z'
 if($z -eq $usbRoot -and (Healthy 'Z')){ }
 else {
